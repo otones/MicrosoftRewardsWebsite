@@ -8,7 +8,6 @@ import {
   setStorageItem,
   getStorageItems,
   setStorageItems,
-  mergeIntoStorageItem,
 } from './useStorage';
 
 describe('useStorage helpers', () => {
@@ -43,25 +42,6 @@ describe('useStorage helpers', () => {
     it('returns null for keys that are unset', async () => {
       const result = await getStorageItems(['active']);
       expect(result.active).toBeNull();
-    });
-  });
-
-  describe('mergeIntoStorageItem', () => {
-    it('creates an array from a single value when nothing is stored', async () => {
-      await mergeIntoStorageItem('list', 'a');
-      expect(await getStorageItem('list')).toEqual(['a']);
-    });
-
-    it('appends to an existing array', async () => {
-      await setStorageItem('list', ['a']);
-      await mergeIntoStorageItem('list', ['b', 'c']);
-      expect(await getStorageItem('list')).toEqual(['a', 'b', 'c']);
-    });
-
-    it('increments an existing number', async () => {
-      await setStorageItem('counter', 5);
-      await mergeIntoStorageItem('counter', 2);
-      expect(await getStorageItem<number>('counter')).toBe(7);
     });
   });
 });

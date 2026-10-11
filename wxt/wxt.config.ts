@@ -16,9 +16,11 @@ export default defineConfig({
     // way the base stays obvious.
     version_name: '3.1.2-zh',
     permissions: ['storage', 'alarms'],
-    icons: { 16: 'imgs/logo.png', 32: 'imgs/logo2.png', 48: 'imgs/logo2.png', 128: 'imgs/logo3.png' },
+    // One 512x512 file for every slot: build-icons.mjs writes the same rasterized
+    // PNG for each size, so the extra names only carried duplicate bytes.
+    icons: { 16: 'imgs/logo.png', 32: 'imgs/logo.png', 48: 'imgs/logo.png', 128: 'imgs/logo.png' },
     action: {
-      default_icon: { 16: 'imgs/logo.png', 32: 'imgs/logo2.png', 48: 'imgs/logo2.png', 128: 'imgs/logo3.png' },
+      default_icon: { 16: 'imgs/logo.png', 32: 'imgs/logo.png', 48: 'imgs/logo.png', 128: 'imgs/logo.png' },
       default_title: '微软积分自动奖励',
     },
     browser_specific_settings: {

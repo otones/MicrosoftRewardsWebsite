@@ -68,32 +68,3 @@ export async function getStorageItems(keys: string[], storageType: StorageValues
         return acc;
     }, {});
 }
-
-function asAppendItems<T>(v: T | T[]): T[] {
-    return Array.isArray(v) ? v : [v];
-}
-
-export async function mergeIntoStorageItem<T>(
-    key: string,
-    newValue: T | T[],
-    storageType: StorageValues = StorageValues.LOCAL
-) {
-    const storageKey = `${storageType}:${key}` as StorageItemKey;
-    const existingValue = await storage.getItem(storageKey);
-
-    let updatedValue: unknown;
-
-    if (existingValue == null) {
-        updatedValue = asAppendItems(newValue);
-    } else if (Array.isArray(existingValue)) {
-        updatedValue = existingValue.concat(asAppendItems(newValue));
-    } else if (typeof existingValue === 'string') {
-        updatedValue = existingValue + String(newValue);
-    } else if (typeof existingValue === 'number') {
-        updatedValue = (existingValue as number) + (newValue as any);
-    } else {
-        throw new Error('mergeIntoStorageItem: Unsupported data type for appending.');
-    }
-
-    await storage.setItem(storageKey, updatedValue);
-}

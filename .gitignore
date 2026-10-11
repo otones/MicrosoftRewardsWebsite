@@ -12,9 +12,7 @@ node_modules/
 
 .vscode/
 .DS_Store
-gulpfile.js
 
 # build / release artifacts — distribute via GitHub Releases & the web stores,
 # do not commit. (History cleanup for already-committed binaries is a separate task.)
 *.zip
-*.apk
