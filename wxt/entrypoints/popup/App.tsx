@@ -52,11 +52,6 @@ function App() {
     return (
         <>
             <h3 className="container-fluid text-center mt-2 heading">微软积分自动奖励</h3>
-            <div className="container-fluid text-center my-2">
-                <a href="https://svitspindler.com/microsoft-automatic-rewards" className="float-start links" target="_blank">帮助</a>
-                <a href="https://svitspindler.com/microsoft-automatic-rewards/mobile/test-app" className="float-start links" target="_blank">手机版</a>
-                <a className="links" href="https://svitspindler.com/contact" target="_blank" id="contact">联系作者</a>
-            </div>
 
             <div className="text-center">
                 <ManualClaimButton isSearching={isSearching} />
@@ -92,29 +87,6 @@ function App() {
                         <label htmlFor="openFirstResult">在搜索标签页中打开首个结果</label>
                         <span className="tooltip-icon info" data-tooltip="在每个搜索标签页里，随机延迟后自动打开第一个搜索结果">ℹ</span>
                     </div>
-                </div>
-
-                <div className="left-align small-title">
-                    <div className="ml-2">免费游戏扩展：</div>
-                    <ul className="earn-list">
-                        <li>
-                            <a href="https://chromewebstore.google.com/detail/free-game-claimer-for-ste/mndghaafpgiinfecbbbcppppiblmjepk" className="normal-link" target="_blank" style={{ display: 'flex', alignItems: 'center', width: '100%', height: '100%' }}>
-                                <img src="/imgs/free-games.png" alt="free games" className="earn-logo" />
-                                Steam 与 Epic 免费游戏领取
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-                <div className="left-align ml-2 small-title">手机 App 赚取更多积分：</div>
-                <div className="website-header">
-                    <div className="qr-code-with-text">
-                        <img src="/imgs/svgs/qr-code-app.svg" alt="QR code" className="qr-code" />
-                        <span className="website-phone-text">手机扫码</span>
-                    </div>
-                    <a href="https://play.google.com/store/apps/details?id=com.spin311.microsoft_automatic_rewards" className="website-phone normal-link no-underline try-mobile" target="_blank" rel="noopener noreferrer">
-                        <img className="website-phone-image" src="/imgs/mar-phone.png" alt="Microsoft Automatic Rewards Phone App" />
-                        <div className="normal-color">下载 App</div>
-                    </a>
                 </div>
 
                 <div className="inputs">
@@ -153,7 +125,7 @@ function App() {
 
             <div className="container-fluid text-center footer-links">
                 <span>
-                    <a href="https://github.com/spin311/MicrosoftRewardsWebsite" className="float-start links" target="_blank">GitHub</a>
+                    <a href="https://github.com/otones/MicrosoftRewardsWebsite" className="float-start links" target="_blank">GitHub</a>
                     <img src="/imgs/github.png" alt="github-logo" />
                 </span>
                 <a className="links" href="https://rewards.bing.com/" target="_blank" id="rewardsLink">积分</a>
