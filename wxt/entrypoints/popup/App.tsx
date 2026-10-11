@@ -1,5 +1,5 @@
 import './App.css';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useStorage } from '@/entrypoints/hooks/useStorage';
 import { useSearchProgress } from '@/entrypoints/hooks/useSearchProgress';
 import { useDailyRunStatus } from '@/entrypoints/hooks/useDailyRunStatus';
@@ -23,7 +23,6 @@ function App() {
     const [openFirstResult, setOpenFirstResult] = useStorage<boolean>('openFirstResult', DEFAULTS.openFirstResult, StorageValues.SYNC);
     const [claimPoints, setClaimPoints] = useStorage<boolean>('claimPoints', DEFAULTS.claimPoints, StorageValues.SYNC);
     const [runAtTime, setRunAtTime] = useStorage<string>('runAtTime', DEFAULTS.runAtTime, StorageValues.SYNC);
-    const [donateHover, setDonateHover] = useState(false);
     const { isLoaded, isSearching, completed, total } = useSearchProgress();
     const runStatus = useDailyRunStatus();
 
@@ -129,10 +128,6 @@ function App() {
                     <img src="/imgs/github.png" alt="github-logo" />
                 </span>
                 <a className="links" href="https://rewards.bing.com/" target="_blank" id="rewardsLink">积分</a>
-                <span className="float-end" style={{ display: 'flex', alignItems: 'center' }}>
-                    <a href="https://svitspindler.com/donate" className="links" target="_blank" id="donateText" onMouseOver={() => setDonateHover(true)}>捐赠</a>
-                    <img src="/imgs/justAGirlSmol.png" alt="Cat" id="donateImg" style={{ visibility: donateHover ? 'visible' : 'hidden' }} />
-                </span>
             </div>
         </>
     );

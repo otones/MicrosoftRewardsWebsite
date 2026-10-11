@@ -17,8 +17,6 @@ import { openDailyRewards } from './dailyRewards';
 import { startSearches, stopSearches } from './searchRunner';
 import { clearTrackedTabs } from './tabCleanup';
 
-const WEBSITE_URL = 'https://svitspindler.com/microsoft-automatic-rewards';
-
 const DAILY_CHECK_ALARM = 'dailyCheck';
 
 // Bounded so a pathological error message cannot fill storage.
@@ -266,10 +264,6 @@ export async function handleInstallOrUpdate(details: { reason: string }): Promis
         }, StorageValues.SYNC);
         // Run state is device-local, so it is seeded on local storage.
         await setStorageItems({ isSearching: false, currentSearch: 0 }, StorageValues.LOCAL);
-        await browser.runtime.setUninstallURL(
-            `https://svitspindler.com/uninstall?extension=${encodeURI('Microsoft Automatic Rewards')}`
-        );
-        setTimeout(() => { browser.tabs.create({ url: WEBSITE_URL, active: true }); }, 1000);
     } else if (details.reason === 'update') {
         setBadgeText('New');
     }

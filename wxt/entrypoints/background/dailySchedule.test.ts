@@ -253,10 +253,6 @@ describe('handleInstallOrUpdate', () => {
   // "Open first result" navigates the search tab off the Bing results page, which
   // risks the search not being credited, so a fresh install must start with it off.
   it('seeds a new install with "open first result" disabled', async () => {
-    trackCreatedTabs();
-    // Not implemented by the fake browser, and irrelevant to what this asserts.
-    vi.spyOn(fakeBrowser.runtime, 'setUninstallURL').mockResolvedValue(undefined);
-
     await handleInstallOrUpdate({ reason: 'install' });
 
     expect(await getStorageItem<boolean>('openFirstResult', StorageValues.SYNC)).toBe(false);
@@ -265,9 +261,6 @@ describe('handleInstallOrUpdate', () => {
   // Claiming clicks through a real transaction on the account, so it is opt-in:
   // a fresh install must not start out pressing it.
   it('seeds a new install with "claim points" disabled', async () => {
-    trackCreatedTabs();
-    vi.spyOn(fakeBrowser.runtime, 'setUninstallURL').mockResolvedValue(undefined);
-
     await handleInstallOrUpdate({ reason: 'install' });
 
     expect(await getStorageItem<boolean>('claimPoints', StorageValues.SYNC)).toBe(false);
@@ -276,12 +269,23 @@ describe('handleInstallOrUpdate', () => {
   // The time of day is a setting like any other, so a fresh install has to carry
   // the shipped default rather than leaving the scheduler to guess.
   it('seeds a new install with the default run time', async () => {
-    trackCreatedTabs();
-    vi.spyOn(fakeBrowser.runtime, 'setUninstallURL').mockResolvedValue(undefined);
-
     await handleInstallOrUpdate({ reason: 'install' });
 
     expect(await getStorageItem<string>('runAtTime', StorageValues.SYNC)).toBe(DEFAULT_RUN_AT);
+  });
+
+  // This fork is the extension alone: installing must not open the upstream
+  // author's site, and uninstalling must not report anywhere.
+  it('opens no tab and sets no uninstall URL on install', async () => {
+    const urls = trackCreatedTabs();
+    const uninstall = vi.spyOn(fakeBrowser.runtime, 'setUninstallURL');
+
+    await handleInstallOrUpdate({ reason: 'install' });
+    // The old build opened that tab on a 1s timer, so let one land before asserting.
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(urls).toEqual([]);
+    expect(uninstall).not.toHaveBeenCalled();
   });
 });
 

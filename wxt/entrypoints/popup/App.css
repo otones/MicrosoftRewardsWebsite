@@ -159,13 +159,6 @@ a:not(.normal-link)::before {
   z-index: -1;
   transition: all .3s ease-in-out;
 }
-#donateImg {
-  visibility: hidden;
-  /* Overrides the 20px footer-image cap so the cat is a bit larger when the
-     Donate link reveals it on hover. */
-  height: 28px;
-  width: auto;
-}
 
 a:not(.normal-link):hover::before {
   bottom: 0;

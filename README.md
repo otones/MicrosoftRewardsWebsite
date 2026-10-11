@@ -1,109 +1,54 @@
-# Search automatic rewards
+# 微软积分自动奖励 · 中文精简版
 
-![banner](docs/images/banner.png)
+自动完成微软积分（Microsoft Rewards）的每日任务：**自动搜索、自动做每日任务、自动领取积分**。
 
-Get the most out of your Microsoft rewards account and earn points every day!
+这是一个**极简化的中文分支**：只保留扩展本身要做的三件事，去掉原版里的推广内容（免费游戏扩展、手机 App 二维码、捐赠入口、安装/卸载时的作者站点），并把界面完整本地化为中文。
 
-If you like the extension, please give it a star on GitHub! <img src="docs/images/github-star.png" alt="icon" height="32">
+版本：`3.12-zh`
 
-## Download
+## 功能
 
-[Google Chrome Store](https://chromewebstore.google.com/detail/microsoft-automatic-rewar/ocmmbfdhomnkljmjkmafegefcgcfkefo)  
+| 功能 | 说明 |
+|---|---|
+| 每日搜索 | 在后台按设定次数打开 Bing 搜索标签页，用自然词组合成查询、随机间隔，页面加载完成后自动关闭 |
+| 每日任务 | 打开 Bing 积分页，自动点完当日的任务卡片 |
+| 自动领取积分 | 自动点击「可领取」把积分入账（默认关闭，需自行开启） |
+| 每天定时运行 | 可设定本地时间（默认 09:00）。到点自动开始；若那一刻浏览器没打开或电脑在睡眠，会在之后第一次有机会时补跑 |
 
-[Firefox Store](https://addons.mozilla.org/en-US/firefox/addon/microsoft-automatic-rewards/)
+也可以随时点弹窗里的「开始运行」手动跑一次。
 
-[Mobile app](https://github.com/spin311/MicrosoftRewardsWebsite/releases/tag/app)
+## 安装
 
-  If you enjoy the extension, 5-star rating would mean a lot:) <img src="docs/images/stars5.jpeg" alt="5 Stars" height="16">
-
-## Donate <img src="docs/images/justAGirl.png" alt="Cat" height="64">
-
-Donations help me make tools like this for free in my spare time. Any amount helps! ❤️
-
-[![Donate with PayPal button](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/donate/?hosted_button_id=4WXEWMN3QGLGY)
-
-
-
-## Features
-
-![Popup Screenshot](docs/images/help3.png)
-
-1. Open 10 random tabs in Bing and close them once they are loaded.
-2. Automatically open tabs every day when the browser is opened (turned on by default).
-3. Choose duration between tabs opening in seconds (choose 0 to open all tabs at the same time).
-4. Number of searches
-5. Time in seconds before tab gets closed (choose 0 to close when loaded)
-6. GitHub page with code and documentation
-7. Visit the Microsoft Rewards site and log in.
-8. [Donate with PayPal or any credit card](https://www.paypal.com/donate/?hosted_button_id=4WXEWMN3QGLGY).
-
-<img src="docs/images/pin.png" alt="Pin extension" height="64">
-
-Make sure to pin the extension.
-
-## Project structure
-
-The browser extension is built with [WXT](https://wxt.dev/) and React. One
-codebase produces both the Chrome (MV3) and Firefox (MV2) builds — there is no
-longer a separate source tree per browser.
-
-```
-/wxt                        - Browser extension (WXT + React + TypeScript)
-  /entrypoints
-    background.ts           - Background service worker entry
-    /background             - Daily rewards, scheduling, search runner
-    rewards.content.ts      - Content script on rewards.bing.com
-    bingResult.content.ts   - Content script on Bing search results
-    /popup                  - Popup UI (React)
-    /components             - Shared React components
-    /hooks                  - React hooks (storage, search progress)
-    /utils                  - Search, progress, settings, helpers
-    /data                   - Search term pool
-    /enums, /types          - Shared TypeScript definitions
-  /public                   - Static assets copied into the build (icons)
-  wxt.config.ts             - Manifest and build configuration
-/microsoft_rewards_app      - Android app (Flutter)
-/assets                     - Source icon artwork (icon.svg)
-/scripts                    - Maintenance scripts (icon rasterization)
-/docs                       - Documentation and README images
-```
-
-## Development
-
-All extension commands run from the `wxt` directory:
+需要 Node.js 与 npm：
 
 ```bash
 cd wxt
 npm install
-
-npm run dev              # Chrome, hot reload
-npm run dev:firefox      # Firefox, hot reload
-
-npm run compile          # TypeScript typecheck
-npm run test             # Unit tests (Vitest)
-
-npm run build            # Production build -> wxt/dist/chrome-mv3
-npm run build:firefox    # Production build -> wxt/dist/firefox-mv2
-npm run zip              # Packaged zip for store upload
-npm run zip:firefox
+npm run build            # Chrome 产物：wxt/dist/chrome-mv3
 ```
 
-Build output lives in `wxt/dist` and is **not** committed — releases are
-published to the web stores and to GitHub Releases.
+然后在 Chrome 打开 `chrome://extensions` → 开启右上角「开发者模式」→「加载已解压的扩展程序」→ 选择 `wxt/dist/chrome-mv3`。
 
-To load an unpacked development build: run `npm run build`, then in Chrome open
-`chrome://extensions`, enable Developer mode, and "Load unpacked" from
-`wxt/dist/chrome-mv3`.
+- Firefox：`npm run build:firefox`，产物在 `wxt/dist/firefox-mv2`。
+- 开发调试：`npm run dev`（Chrome，热热重载）。
 
-### Legacy code
+## 设计取向
 
-Versions before the WXT rewrite used hand-written `chrome/` and `firefox/`
-source trees with committed compiled output. That code has been removed from
-the default branch and preserved on the [`legacy`](https://github.com/spin311/MicrosoftRewardsWebsite/tree/legacy)
-branch. Nothing on the default branch depends on it.
+极简：只做上面这三件事，不引入服务器、不采集数据、不做任何推广。
 
-## Contact
+- 使用前请先在浏览器里登录微软账号（<https://www.microsoft.com/rewards>）。扩展不接触、也不保存你的账号密码。
+- 没有服务器、没有统计上报：全部逻辑在本地运行，设置存在浏览器的同步/本地存储里。
+- 自动化操作可能与微软积分的服务条款存在冲突，请自行判断并承担风险。
 
-If you have any suggestions or questions, you can contact me at [spin311pro@gmail.com](mailto:spin311pro@gmail.com).
+## 致谢
 
-Enjoy your rewards! 😊
+本分支基于 **[spin311/MicrosoftRewardsWebsite](https://github.com/spin311/MicrosoftRewardsWebsite)**（MIT 协议）修改而来。
+
+感谢原作者 **[@spin311](https://github.com/spin311)** 的出色工作 —— 扩展的核心设计、搜索调度与页面交互逻辑都来自原项目。
+
+- 原仓库：<https://github.com/spin311/MicrosoftRewardsWebsite>
+- 如果你喜欢这个工具，也请去原仓库点个 star ⭐
+
+## 许可
+
+[MIT](LICENSE)
