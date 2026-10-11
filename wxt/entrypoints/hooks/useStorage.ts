@@ -10,20 +10,33 @@ type StorageItemKey = `local:${string}` | `session:${string}` | `sync:${string}`
 export function useStorage<T>(key: string, defaultValue: T, storageType: StorageValues = StorageValues.LOCAL) {
     const storageKey = `${storageType}:${key}` as StorageItemKey;
     const [value, setValue] = useState<T>(defaultValue);
+    // What storage holds right now, so a value the hook merely read back can be
+    // told apart from an edit by the user. Writing the read-back value again meant
+    // one needless write per setting per popup open — nine of them, every one of
+    // which wakes the service worker.
+    const [stored, setStored] = useState<T | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
 
     useEffect(() => {
-        storage.getItem(storageKey).then((stored: any) => {
-            setValue(stored ?? defaultValue);
+        storage.getItem(storageKey).then((fetched: any) => {
+            const initial = fetched ?? defaultValue;
+            setValue(initial);
+            setStored(initial);
             setIsInitialized(true);
         });
     }, [storageKey]);
 
+    // Nothing is written while the value already matches storage — including a key
+    // that was never set, whose default is now used rather than persisted. Every
+    // reader treats a missing key as the default (DEFAULTS, and the background's
+    // `?? DEFAULTS.x` fallbacks), so persisting it bought nothing.
+    //
+    // The comparison is by identity, which is right for the settings this hook
+    // holds (booleans, numbers, strings).
     useEffect(() => {
-        if (isInitialized) {
-            void storage.setItem(storageKey, value);
-        }
-    }, [storageKey, value, isInitialized]);
+        if (!isInitialized || Object.is(value, stored)) return;
+        void storage.setItem(storageKey, value).then(() => setStored(value));
+    }, [storageKey, value, stored, isInitialized]);
 
     return [value, setValue] as const;
 }

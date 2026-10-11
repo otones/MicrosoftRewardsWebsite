@@ -24,27 +24,32 @@ const INITIAL: SearchProgressState = {
 // Live view of the background's search run. The background owns these keys, so
 // this hook only reads them: once at mount, then on every storage change. Using
 // storage (rather than runtime messages) means a popup opened mid-run sees the
-// current count immediately and keeps ticking while it stays open.
+// current count immediately and keeps ticking while it stays open. The run's
+// progress is device-local while the total is a synced setting, so they are read
+// from their own areas.
 export function useSearchProgress(): SearchProgressState {
     const [state, setState] = useState<SearchProgressState>(INITIAL);
 
     useEffect(() => {
         let isMounted = true;
-        void getStorageItems(['isSearching', 'currentSearch', 'searches'], StorageValues.SYNC).then((s) => {
+        void Promise.all([
+            getStorageItems(['isSearching', 'currentSearch'], StorageValues.LOCAL),
+            getStorageItems(['searches'], StorageValues.SYNC),
+        ]).then(([run, settings]) => {
             if (!isMounted) return;
             setState({
                 isLoaded: true,
-                isSearching: s.isSearching ?? false,
-                completed: toInt(s.currentSearch, 0),
-                total: toInt(s.searches, DEFAULTS.searches),
+                isSearching: run.isSearching ?? false,
+                completed: toInt(run.currentSearch, 0),
+                total: toInt(settings.searches, DEFAULTS.searches),
             });
         });
 
         const unwatchers = [
-            storage.watch<boolean>('sync:isSearching', (value) =>
+            storage.watch<boolean>('local:isSearching', (value) =>
                 setState((prev) => ({ ...prev, isSearching: value ?? false }))
             ),
-            storage.watch<number>('sync:currentSearch', (value) =>
+            storage.watch<number>('local:currentSearch', (value) =>
                 setState((prev) => ({ ...prev, completed: toInt(value, 0) }))
             ),
             storage.watch<number>('sync:searches', (value) =>

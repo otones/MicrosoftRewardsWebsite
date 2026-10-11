@@ -1,6 +1,7 @@
 import { defineBackground } from '#imports';
 import { browser } from 'wxt/browser';
 import {
+    checkLastOpened,
     handleDailyCheckAlarm,
     handleInstallOrUpdate,
     handleStartup,
@@ -20,6 +21,13 @@ export default defineBackground(() => {
     // Covers a fresh install and any other worker wake-up that isn't a full
     // browser restart, so the daily-check alarm doesn't wait on onStartup.
     void scheduleDailyCheckAlarm();
+    // Every worker wake is also a chance to notice that today has not run yet.
+    // This is the trigger the other two cannot cover: a browser that is never
+    // fully restarted (onStartup never fires) and an alarm that a restart cleared
+    // or the device sleeping delayed. The gate is date-based and idempotent, so
+    // the extra calls cost a couple of storage reads and do nothing on a day
+    // that has already run.
+    void checkLastOpened();
     browser.runtime.onMessage.addListener((request: { action?: string }) => {
         if (request.action === 'popup') void runRewards();
         else if (request.action === 'stop') void stopSearches();

@@ -31,11 +31,14 @@ export async function startSearches(searchTimeout: number, searches: number, clo
 
 export async function handleAlarmStep(alarm: { name: string }): Promise<void> {
     if (alarm.name !== ALARM_NAME) return;
-    const s = await getStorageItems(['searches', 'timeout', 'closeTime', 'currentSearch', 'active'], StorageValues.SYNC);
+    // Settings roam with the profile; how far today's run has got is device-local
+    // state (see dailySchedule.ts), so the two are read separately.
+    const s = await getStorageItems(['searches', 'timeout', 'closeTime', 'active'], StorageValues.SYNC);
+    const progress = await getStorageItem<number>('currentSearch', StorageValues.LOCAL);
     const searches = toInt(s.searches, DEFAULTS.searches);
     const searchTimeout = toInt(s.timeout, DEFAULTS.timeout);
     const closeTimeMs = toInt(s.closeTime, DEFAULTS.closeTime) * 1000;
-    const opened = toInt(s.currentSearch, searches);
+    const opened = toInt(progress, searches);
     const isSearchesEnabled = s.active ?? DEFAULTS.active;
 
     // Alarms outlive the setting that created them (they survive a browser
@@ -75,7 +78,7 @@ function scheduleNextStep(searchTimeout: number): void {
 }
 
 export async function stopSearches(): Promise<void> {
-    await setStorageItem('isSearching', false, StorageValues.SYNC);
+    await setStorageItem('isSearching', false, StorageValues.LOCAL);
     clearBadge();
     // Only this run's alarm: clearAll() also wiped the tab-cleanup sweep, which
     // left every tab the run had opened on screen for good.
@@ -96,9 +99,10 @@ export function watchSearchesToggle(): void {
 // the toolbar badge both read it, so every step must persist it — including the
 // last one, or the popup would freeze one short of the total. `isSearching` is
 // re-affirmed here (not only at the start) so a run that outlives a service
-// worker restart still reports itself as running.
+// worker restart still reports itself as running. Both are device-local, so a run
+// on another machine cannot show up here as this machine's progress.
 async function recordProgress(opened: number): Promise<void> {
-    await setStorageItems({ currentSearch: opened, isSearching: true }, StorageValues.SYNC);
+    await setStorageItems({ currentSearch: opened, isSearching: true }, StorageValues.LOCAL);
     setSearchCountBadge(opened);
 }
 

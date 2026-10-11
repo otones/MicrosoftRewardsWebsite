@@ -621,3 +621,47 @@ input[type="number"]:focus {
     line-height: 1.35;
     color: #8a5300;
 }
+
+/* Whether today's automatic run has happened, and if not, why. Sits with the
+   progress card it explains; the tones reuse the progress dot colours. */
+.run-status {
+    max-width: 20em;
+    margin: 0.3em auto 0.5em;
+    font-size: 0.75em;
+    line-height: 1.35;
+    color: #5b5f5c;
+}
+
+.run-status--ok {
+    color: #2e9e6b;
+}
+
+.run-status--running {
+    color: #2282ad;
+}
+
+.run-status--warn {
+    color: #8a5300;
+}
+
+/* The time input matches the select and number inputs; it needs more room than
+   they do for "HH:MM" plus the browser's own picker control. */
+input[type="time"] {
+  font-family: inherit;
+  font-size: 0.8em;
+  padding: 0.2em 0.4em;
+  color: #18272F;
+  background-color: #fff;
+  border: 1px solid #2282ad;
+  border-radius: 0.25rem;
+}
+
+input[type="time"]:focus {
+  outline: 0;
+  border-color: #1a6f8c;
+  box-shadow: 0 0 0 0.15rem rgba(34, 130, 173, 0.25);
+}
+
+.field--time input {
+  width: 7.5em;
+}

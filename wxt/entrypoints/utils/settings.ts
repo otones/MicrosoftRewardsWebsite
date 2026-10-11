@@ -1,5 +1,7 @@
 // Single source of truth for setting defaults, used by install seeding,
 // background reads (fallbacks), and the popup's useStorage defaults.
+import { DEFAULT_RUN_AT } from './dailyRunTime';
+
 export const DEFAULTS = {
     active: true,
     autoDaily: true,
@@ -18,6 +20,10 @@ export const DEFAULTS = {
     // update — and with "Daily set" off it is what makes the dashboard tab open
     // at all, which briefly takes focus.
     claimPoints: false,
+    // Local time of day the automatic run is due at. It waits for this time and
+    // then runs at the first wake after it, so a machine that was asleep or a
+    // browser that was closed at that moment still gets the day.
+    runAtTime: DEFAULT_RUN_AT,
 } as const;
 
 // Selecting an account level sets a sensible default number of daily searches

@@ -2,6 +2,7 @@ import './App.css';
 import { useEffect, useState } from 'react';
 import { useStorage } from '@/entrypoints/hooks/useStorage';
 import { useSearchProgress } from '@/entrypoints/hooks/useSearchProgress';
+import { useDailyRunStatus } from '@/entrypoints/hooks/useDailyRunStatus';
 import { StorageValues } from '@/entrypoints/enums/storageValues';
 import { DEFAULTS, LEVEL_SEARCHES } from '@/entrypoints/utils/settings';
 import { clearBadge } from '@/entrypoints/utils/browserAction';
@@ -10,6 +11,7 @@ import NumberInput from '@/entrypoints/components/NumberInput';
 import AccountLevelSelect from '@/entrypoints/components/AccountLevelSelect';
 import ManualClaimButton from '@/entrypoints/components/ManualClaimButton';
 import SearchProgressBar from '@/entrypoints/components/SearchProgressBar';
+import TimeInput from '@/entrypoints/components/TimeInput';
 
 function App() {
     const [active, setActive] = useStorage<boolean>('active', DEFAULTS.active, StorageValues.SYNC);
@@ -20,8 +22,10 @@ function App() {
     const [accountLevel, setAccountLevel] = useStorage<string>('accountLevel', DEFAULTS.accountLevel, StorageValues.SYNC);
     const [openFirstResult, setOpenFirstResult] = useStorage<boolean>('openFirstResult', DEFAULTS.openFirstResult, StorageValues.SYNC);
     const [claimPoints, setClaimPoints] = useStorage<boolean>('claimPoints', DEFAULTS.claimPoints, StorageValues.SYNC);
+    const [runAtTime, setRunAtTime] = useStorage<string>('runAtTime', DEFAULTS.runAtTime, StorageValues.SYNC);
     const [donateHover, setDonateHover] = useState(false);
     const { isLoaded, isSearching, completed, total } = useSearchProgress();
+    const runStatus = useDailyRunStatus();
 
     // The "New" badge from an update is dismissed once the popup is opened — but
     // the badge doubles as the live search counter, so wait for the run state and
@@ -47,11 +51,11 @@ function App() {
 
     return (
         <>
-            <h3 className="container-fluid text-center mt-2 heading">Search automatic rewards</h3>
+            <h3 className="container-fluid text-center mt-2 heading">微软积分自动奖励</h3>
             <div className="container-fluid text-center my-2">
-                <a href="https://svitspindler.com/microsoft-automatic-rewards" className="float-start links" target="_blank">Help</a>
-                <a href="https://svitspindler.com/microsoft-automatic-rewards/mobile/test-app" className="float-start links" target="_blank">Mobile</a>
-                <a className="links" href="https://svitspindler.com/contact" target="_blank" id="contact">Contact Me</a>
+                <a href="https://svitspindler.com/microsoft-automatic-rewards" className="float-start links" target="_blank">帮助</a>
+                <a href="https://svitspindler.com/microsoft-automatic-rewards/mobile/test-app" className="float-start links" target="_blank">手机版</a>
+                <a className="links" href="https://svitspindler.com/contact" target="_blank" id="contact">联系作者</a>
             </div>
 
             <div className="text-center">
@@ -59,89 +63,102 @@ function App() {
                 {hasRunToShow && (
                     <SearchProgressBar completed={completed} total={total} isSearching={isSearching} />
                 )}
+                {/* Says whether today's automatic run has happened and, when it
+                    has not, that it is still coming — the failure this used to
+                    leave was silence. */}
+                {runStatus.isLoaded && (
+                    <p className={`run-status run-status--${runStatus.view.tone}`} role="status">
+                        {runStatus.view.text}
+                    </p>
+                )}
                 <div className="checkboxes">
                     <div className="input-with-info">
                         <input className="form-check-input" type="checkbox" id="autoCheckbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-                        <label htmlFor="autoCheckbox">Daily searches</label>
-                        <span className="tooltip-icon info" data-tooltip="Opens bing tabs the first time browser opens every day">ℹ</span>
+                        <label htmlFor="autoCheckbox">每日搜索</label>
+                        <span className="tooltip-icon info" data-tooltip="每天首次打开浏览器时，自动打开 Bing 搜索标签页">ℹ</span>
                     </div>
                     <div className="input-with-info">
                         <input className="form-check-input" type="checkbox" id="autoDaily" checked={autoDaily} onChange={(e) => setAutoDaily(e.target.checked)} />
-                        <label htmlFor="autoDaily">Daily set</label>
-                        <span className="tooltip-icon info" data-tooltip="Opens bing rewards tab and completes daily tasks for extra points">ℹ</span>
+                        <label htmlFor="autoDaily">每日任务</label>
+                        <span className="tooltip-icon info" data-tooltip="打开 Bing 积分页，自动完成每日任务以获取额外积分">ℹ</span>
                     </div>
                     <div className="input-with-info">
                         <input className="form-check-input" type="checkbox" id="claimPoints" checked={claimPoints} onChange={(e) => setClaimPoints(e.target.checked)} />
-                        <label htmlFor="claimPoints">Claim points</label>
-                        <span className="tooltip-icon info" data-tooltip="Opens bing rewards tab and presses Ready to claim, so earned points land in your balance. The tab briefly takes focus.">ℹ</span>
+                        <label htmlFor="claimPoints">自动领取积分</label>
+                        <span className="tooltip-icon info" data-tooltip="打开 Bing 积分页并点击「可领取」，把已获得的积分入账。标签页会短暂抢占焦点。">ℹ</span>
                     </div>
                     <div className="input-with-info">
                         <input className="form-check-input" type="checkbox" id="openFirstResult" checked={openFirstResult} onChange={(e) => setOpenFirstResult(e.target.checked)} />
-                        <label htmlFor="openFirstResult">Open first result in search tabs</label>
-                        <span className="tooltip-icon info" data-tooltip="In each opened search tab, navigate to the first result after a short random delay">ℹ</span>
+                        <label htmlFor="openFirstResult">在搜索标签页中打开首个结果</label>
+                        <span className="tooltip-icon info" data-tooltip="在每个搜索标签页里，随机延迟后自动打开第一个搜索结果">ℹ</span>
                     </div>
                 </div>
 
                 <div className="left-align small-title">
-                    <div className="ml-2">Extension for free games:</div>
+                    <div className="ml-2">免费游戏扩展：</div>
                     <ul className="earn-list">
                         <li>
                             <a href="https://chromewebstore.google.com/detail/free-game-claimer-for-ste/mndghaafpgiinfecbbbcppppiblmjepk" className="normal-link" target="_blank" style={{ display: 'flex', alignItems: 'center', width: '100%', height: '100%' }}>
                                 <img src="/imgs/free-games.png" alt="free games" className="earn-logo" />
-                                Free games claimer for Steam & Epic
+                                Steam 与 Epic 免费游戏领取
                             </a>
                         </li>
                     </ul>
                 </div>
-                <div className="left-align ml-2 small-title">Mobile app to earn more points:</div>
+                <div className="left-align ml-2 small-title">手机 App 赚取更多积分：</div>
                 <div className="website-header">
                     <div className="qr-code-with-text">
                         <img src="/imgs/svgs/qr-code-app.svg" alt="QR code" className="qr-code" />
-                        <span className="website-phone-text">Scan on phone</span>
+                        <span className="website-phone-text">手机扫码</span>
                     </div>
                     <a href="https://play.google.com/store/apps/details?id=com.spin311.microsoft_automatic_rewards" className="website-phone normal-link no-underline try-mobile" target="_blank" rel="noopener noreferrer">
                         <img className="website-phone-image" src="/imgs/mar-phone.png" alt="Microsoft Automatic Rewards Phone App" />
-                        <div className="normal-color">Download App</div>
+                        <div className="normal-color">下载 App</div>
                     </a>
                 </div>
 
                 <div className="inputs">
                     <div className="width-100">
                         <div className="input-with-info">
-                            <AccountLevelSelect value={accountLevel} onChange={handleLevelChange} />
-                            <span className="tooltip-icon info" data-tooltip="Your Rewards level sets a default number of searches (Member 5, Silver 10, Gold 20)">ℹ</span>
+                            <TimeInput id="runAtTime" label="每日运行时间" value={runAtTime} onChange={setRunAtTime} />
+                            <span className="tooltip-icon info" data-tooltip="按本地时间，每天在此刻开始运行。如果那一刻浏览器没打开或电脑正在睡眠，会在之后第一次有机会时补跑。">ℹ</span>
                         </div>
                     </div>
                     <div className="width-100">
                         <div className="input-with-info">
-                            <NumberInput id="searches" label="Number of searches" value={searches} min={1} max={999} onChange={setSearches} />
-                            <span className="tooltip-icon info" data-tooltip="Number of random tabs to open in bing">ℹ</span>
+                            <AccountLevelSelect value={accountLevel} onChange={handleLevelChange} />
+                            <span className="tooltip-icon info" data-tooltip="你的积分等级决定默认搜索次数（会员 5 次、白银 10 次、黄金 20 次）">ℹ</span>
+                        </div>
+                    </div>
+                    <div className="width-100">
+                        <div className="input-with-info">
+                            <NumberInput id="searches" label="搜索次数" value={searches} min={1} max={999} onChange={setSearches} />
+                            <span className="tooltip-icon info" data-tooltip="要在 Bing 打开的随机标签页数量">ℹ</span>
                         </div>
                     </div>
                     <div>
-                        <NumberInput id="timeout" label="Time between searches (s)" value={timeout} min={0} max={9999} onChange={setTimeoutValue} />
+                        <NumberInput id="timeout" label="搜索间隔（秒）" value={timeout} min={0} max={9999} onChange={setTimeoutValue} />
                         {isTimeoutRisky && (
                             <p className="field-warning" role="status">
-                                ⚠ Under {RECOMMENDED_MIN_TIMEOUT_SECONDS}s, Microsoft often stops crediting the
-                                searches, and the browser can stretch a short gap anyway.
-                                {' '}{DEFAULTS.timeout}s or more is recommended.
+                                ⚠ 低于 {RECOMMENDED_MIN_TIMEOUT_SECONDS} 秒时，微软往往不再计入搜索积分，而且浏览器也会把过短的间隔拉长。
+                                {' '}建议 {DEFAULTS.timeout} 秒或以上。
                             </p>
                         )}
                     </div>
                     <div>
-                        <NumberInput id="closeTime" label="Time before closing tabs (s)" value={closeTime} min={0} max={300} onChange={setCloseTime} />
+                        <NumberInput id="closeTime" label="关闭标签页前等待（秒）" value={closeTime} min={0} max={300} onChange={setCloseTime} />
                     </div>
                 </div>
             </div>
 
             <div className="container-fluid text-center footer-links">
                 <span>
-                    <a href="https://github.com/spin311/MicrosoftRewardsWebsite" className="float-start links" target="_blank">Github</a>
+                    <a href="https://github.com/spin311/MicrosoftRewardsWebsite" className="float-start links" target="_blank">GitHub</a>
                     <img src="/imgs/github.png" alt="github-logo" />
                 </span>
-                <a className="links" href="https://rewards.bing.com/" target="_blank" id="rewardsLink">Rewards</a>
+                <a className="links" href="https://rewards.bing.com/" target="_blank" id="rewardsLink">积分</a>
                 <span className="float-end" style={{ display: 'flex', alignItems: 'center' }}>
-                    <a href="https://svitspindler.com/donate" className="links" target="_blank" id="donateText" onMouseOver={() => setDonateHover(true)}>Donate</a>
+                    <a href="https://svitspindler.com/donate" className="links" target="_blank" id="donateText" onMouseOver={() => setDonateHover(true)}>捐赠</a>
                     <img src="/imgs/justAGirlSmol.png" alt="Cat" id="donateImg" style={{ visibility: donateHover ? 'visible' : 'hidden' }} />
                 </span>
             </div>

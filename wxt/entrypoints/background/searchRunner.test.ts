@@ -9,11 +9,19 @@ import { StorageValues } from '@/entrypoints/enums/storageValues';
 
 const ALARM = { name: 'openTabAlarm' };
 
+// Settings live on sync storage; how far today's run has got is device-local, so
+// a seeded value has to land in the right area for the runner to read it back.
+const RUN_STATE_KEYS = ['currentSearch', 'isSearching'];
+
 async function seed(values: Record<string, unknown>): Promise<void> {
-  await setStorageItems(
-    { active: true, searches: 5, timeout: 60, closeTime: 5, openFirstResult: false, ...values },
-    StorageValues.SYNC
-  );
+  const settings: Record<string, unknown> = { active: true, searches: 5, timeout: 60, closeTime: 5, openFirstResult: false };
+  const runState: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (RUN_STATE_KEYS.includes(key)) runState[key] = value;
+    else settings[key] = value;
+  }
+  await setStorageItems(settings, StorageValues.SYNC);
+  if (Object.keys(runState).length > 0) await setStorageItems(runState, StorageValues.LOCAL);
 }
 
 describe('searchRunner', () => {
@@ -30,8 +38,8 @@ describe('searchRunner', () => {
       await startSearches(60, 5, 5);
 
       expect(create).toHaveBeenCalledTimes(1);
-      expect(await getStorageItem<number>('currentSearch', StorageValues.SYNC)).toBe(1);
-      expect(await getStorageItem<boolean>('isSearching', StorageValues.SYNC)).toBe(true);
+      expect(await getStorageItem<number>('currentSearch', StorageValues.LOCAL)).toBe(1);
+      expect(await getStorageItem<boolean>('isSearching', StorageValues.LOCAL)).toBe(true);
     });
   });
 
@@ -52,8 +60,8 @@ describe('searchRunner', () => {
       await handleAlarmStep(ALARM);
 
       expect(create).toHaveBeenCalledTimes(1);
-      expect(await getStorageItem<number>('currentSearch', StorageValues.SYNC)).toBe(2);
-      expect(await getStorageItem<boolean>('isSearching', StorageValues.SYNC)).toBe(true);
+      expect(await getStorageItem<number>('currentSearch', StorageValues.LOCAL)).toBe(2);
+      expect(await getStorageItem<boolean>('isSearching', StorageValues.LOCAL)).toBe(true);
     });
 
     it('records the final search before ending the run', async () => {
@@ -63,8 +71,8 @@ describe('searchRunner', () => {
 
       await handleAlarmStep(ALARM);
 
-      expect(await getStorageItem<number>('currentSearch', StorageValues.SYNC)).toBe(5);
-      expect(await getStorageItem<boolean>('isSearching', StorageValues.SYNC)).toBe(false);
+      expect(await getStorageItem<number>('currentSearch', StorageValues.LOCAL)).toBe(5);
+      expect(await getStorageItem<boolean>('isSearching', StorageValues.LOCAL)).toBe(false);
     });
 
     it('opens no more tabs once every search has run', async () => {
@@ -74,7 +82,7 @@ describe('searchRunner', () => {
       await handleAlarmStep(ALARM);
 
       expect(create).not.toHaveBeenCalled();
-      expect(await getStorageItem<boolean>('isSearching', StorageValues.SYNC)).toBe(false);
+      expect(await getStorageItem<boolean>('isSearching', StorageValues.LOCAL)).toBe(false);
     });
 
     it('stops instead of searching when "Daily searches" is turned off', async () => {
@@ -87,7 +95,7 @@ describe('searchRunner', () => {
       await handleAlarmStep(ALARM);
 
       expect(create).not.toHaveBeenCalled();
-      expect(await getStorageItem<boolean>('isSearching', StorageValues.SYNC)).toBe(false);
+      expect(await getStorageItem<boolean>('isSearching', StorageValues.LOCAL)).toBe(false);
       expect(await fakeBrowser.alarms.getAll()).toEqual([]);
     });
   });
@@ -99,7 +107,7 @@ describe('searchRunner', () => {
 
       await stopSearches();
 
-      expect(await getStorageItem<boolean>('isSearching', StorageValues.SYNC)).toBe(false);
+      expect(await getStorageItem<boolean>('isSearching', StorageValues.LOCAL)).toBe(false);
       expect(await fakeBrowser.alarms.get('openTabAlarm')).toBeUndefined();
     });
 
@@ -131,7 +139,7 @@ describe('searchRunner', () => {
         await vi.advanceTimersByTimeAsync(6_000);
 
         expect(create).toHaveBeenCalledTimes(2);
-        expect(await getStorageItem<number>('currentSearch', StorageValues.SYNC)).toBe(3);
+        expect(await getStorageItem<number>('currentSearch', StorageValues.LOCAL)).toBe(3);
       } finally {
         vi.useRealTimers();
       }

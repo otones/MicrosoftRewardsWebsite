@@ -16,7 +16,7 @@ function ManualClaimButton({ isSearching }: ManualClaimButtonProps) {
 
     return (
         <button id="button" className={`btn my-1 ${isSearching ? 'btn-fail' : 'btn-success'}`} onClick={handleClick}>
-            {isSearching ? 'Stop searches' : 'Get rewards'}
+            {isSearching ? '停止搜索' : '开始运行'}
         </button>
     );
 }
