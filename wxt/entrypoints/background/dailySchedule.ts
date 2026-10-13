@@ -95,12 +95,15 @@ export async function runRewards(): Promise<void> {
 // show it, and appends it to the run's error text when something went wrong.
 async function recordDashboardOutcome(outcome: DashboardOutcome): Promise<void> {
     const notes: string[] = [];
-    if (outcome.dailySets) {
+    if (!outcome.delivered) {
+        // The page never accepted the jobs, so neither dashboard job ran. Distinct
+        // from "ran and found nothing", and the only case where the daily set is
+        // certainly untouched.
+        notes.push('每日任务页没有接受任务指令（内容脚本未就绪），今天没有点每日活动');
+    } else if (outcome.dailySets) {
         const { found, clicked } = outcome.dailySets;
         if (found === 0) notes.push('每日活动：页面上没有找到活动卡片');
         else if (clicked < found) notes.push(`每日活动：只点到了 ${clicked}/${found} 个`);
-    } else if (outcome.claimed === null) {
-        notes.push('每日任务页没有回报结果（可能没加载完就被关闭）');
     }
     if (outcome.claimed === 'noCard') notes.push('领取积分：没找到「可领取」入口');
 

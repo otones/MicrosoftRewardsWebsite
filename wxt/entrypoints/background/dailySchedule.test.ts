@@ -128,6 +128,46 @@ describe('runRewards', () => {
     expect(urls).toEqual([DASHBOARD_URL]);
   });
 
+  // The dashboard is messaged through its content script, and that script can
+  // register after the tab reports "complete" on a page this heavy. The send used
+  // to happen once and swallow the rejection, so a slightly late listener meant
+  // neither dashboard job ran and nothing was recorded. It now retries until the
+  // page accepts.
+  it('keeps trying to hand the jobs to the dashboard until it accepts them', async () => {
+    const urls = trackCreatedTabs();
+    const sendMessage = vi.spyOn(fakeBrowser.tabs, 'sendMessage');
+    // Two failed attempts, then the page's listener is up.
+    sendMessage.mockRejectedValueOnce(new Error('no listener yet'));
+    sendMessage.mockRejectedValueOnce(new Error('no listener yet'));
+    await seed({ active: false, autoDaily: true });
+
+    await runRewards();
+    await flushPendingWork();
+    const dashboardId = urls.indexOf(DASHBOARD_URL) + 1;
+    await fakeBrowser.tabs.onUpdated.trigger(dashboardId, { status: 'complete' }, { id: dashboardId } as never);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(sendMessage.mock.calls.length).toBeGreaterThanOrEqual(3);
+    // Every attempt must be the dashboard job, never a stray message.
+    expect(sendMessage.mock.calls.every(([, msg]: any[]) => msg?.action === 'runDashboard')).toBe(true);
+  });
+
+  // Nothing is listening at all: the run must record that, not present itself as a
+  // completed one. This is the shape the popup shows as a warning line.
+  it('records that the dashboard never accepted the jobs', async () => {
+    const urls = trackCreatedTabs();
+    vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
+    await seed({ active: false, autoDaily: true });
+
+    await runRewards();
+    await flushPendingWork();
+    const dashboardId = urls.indexOf(DASHBOARD_URL) + 1;
+    await fakeBrowser.tabs.onUpdated.trigger(dashboardId, { status: 'complete' }, { id: dashboardId } as never);
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(await getStorageItem<string>('lastRunNote', StorageValues.LOCAL)).toContain('没有接受任务指令');
+  });
+
   // One tab covers both jobs: two would fight over the foreground, and the SPA
   // only renders while visible.
   it('opens a single dashboard when both dashboard jobs are on', async () => {
