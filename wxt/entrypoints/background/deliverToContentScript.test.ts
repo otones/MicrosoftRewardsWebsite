@@ -3,10 +3,61 @@
 // esbuild/happy-dom clash WXT's `#imports` transform triggers).
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing';
-import { REWARDS_CONTENT_SCRIPT, deliverToContentScript } from './deliverToContentScript';
+import {
+  REWARDS_CONTENT_SCRIPT,
+  deliverToContentScript,
+  isFatalInjectionError,
+  isPermittedUrl,
+} from './deliverToContentScript';
 
 const MESSAGE = { action: 'runDashboard' };
 const OPTIONS = { timeoutMs: 4_000, retryMs: 100 };
+const DASHBOARD = 'https://rewards.bing.com/dashboard';
+
+describe('isPermittedUrl', () => {
+  it('accepts the origins the manifest grants', () => {
+    expect(isPermittedUrl(DASHBOARD)).toBe(true);
+    expect(isPermittedUrl('https://www.bing.com/search?q=a')).toBe(true);
+  });
+
+  // A freshly created tab sits on about:blank, which no host permission covers.
+  // Injecting there is refused, so it must not be counted as an attempt.
+  it('rejects everything else', () => {
+    expect(isPermittedUrl('about:blank')).toBe(false);
+    expect(isPermittedUrl('https://example.com/')).toBe(false);
+    expect(isPermittedUrl(null)).toBe(false);
+    expect(isPermittedUrl(undefined)).toBe(false);
+  });
+});
+
+describe('isFatalInjectionError', () => {
+  // Edge's refusal on rewards.bing.com. This is the error that started the whole
+  // API fallback, and it must be recognised so the caller stops waiting.
+  it('recognises the refusal Edge returns for its own pages', () => {
+    expect(isFatalInjectionError('The extensions gallery cannot be scripted.')).toBe(true);
+  });
+
+  it('recognises a host-permission refusal', () => {
+    expect(
+      isFatalInjectionError(
+        'Cannot access contents of the page. Extension manifest must request permission to access the respective host.'
+      )
+    ).toBe(true);
+  });
+
+  // A transient failure must NOT be treated as permanent, or the run would give up
+  // on a page that was merely not ready.
+  it('does not treat a transient failure as permanent', () => {
+    expect(isFatalInjectionError('Receiving end does not exist')).toBe(false);
+    expect(isFatalInjectionError('No tab with id: 7')).toBe(false);
+    expect(isFatalInjectionError(null)).toBe(false);
+  });
+});
+
+// A tab's URL as `tabs.get` would report it at a given moment.
+function tabAt(url: string | null) {
+  return { id: 7, url } as never;
+}
 
 describe('deliverToContentScript', () => {
   beforeEach(() => {
@@ -36,6 +87,7 @@ describe('deliverToContentScript', () => {
     send.mockRejectedValueOnce(new Error('Receiving end does not exist'));
     send.mockResolvedValue(undefined);
     const inject = vi.spyOn(fakeBrowser.scripting, 'executeScript').mockResolvedValue([] as never);
+    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue(tabAt(DASHBOARD));
 
     const promise = deliverToContentScript(7, MESSAGE, OPTIONS);
     await vi.advanceTimersByTimeAsync(500);
@@ -51,9 +103,10 @@ describe('deliverToContentScript', () => {
     });
   });
 
-  it('injects only once no matter how many times it retries', async () => {
+  it('injects only once per URL no matter how many times it retries', async () => {
     vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
     const inject = vi.spyOn(fakeBrowser.scripting, 'executeScript').mockResolvedValue([] as never);
+    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue(tabAt(DASHBOARD));
 
     const promise = deliverToContentScript(7, MESSAGE, OPTIONS);
     await vi.advanceTimersByTimeAsync(10_000);
@@ -61,6 +114,47 @@ describe('deliverToContentScript', () => {
 
     expect(attempt.accepted).toBe(false);
     expect(inject).toHaveBeenCalledTimes(1);
+  });
+
+  // The regression this shape exists for. A tab created a moment ago is still on
+  // about:blank, and injecting there is refused with "Extension manifest must
+  // request permission to access the respective host". If that first refusal were
+  // treated as the final word, the script would never be injected on the real page
+  // and every daily run would fail — which is exactly what happened.
+  it('still injects after the tab navigates away from about:blank', async () => {
+    vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
+    const inject = vi.spyOn(fakeBrowser.scripting, 'executeScript').mockResolvedValue([] as never);
+    const get = vi.spyOn(fakeBrowser.tabs, 'get');
+    // about:blank for the first few polls, then the real page.
+    let calls = 0;
+    get.mockImplementation(async () => {
+      calls += 1;
+      return tabAt(calls <= 3 ? 'about:blank' : DASHBOARD);
+    });
+
+    const promise = deliverToContentScript(7, MESSAGE, OPTIONS);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const attempt = await promise;
+
+    // Never injected while on about:blank...
+    expect(inject).toHaveBeenCalledTimes(1);
+    // ...and the one injection it did make was on the permitted URL.
+    expect(attempt.injectionUrl).toBe(DASHBOARD);
+    expect(attempt.injected).toBe(true);
+  });
+
+  it('does not inject at all while the tab stays on about:blank', async () => {
+    vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
+    const inject = vi.spyOn(fakeBrowser.scripting, 'executeScript').mockResolvedValue([] as never);
+    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue(tabAt('about:blank'));
+
+    const promise = deliverToContentScript(7, MESSAGE, OPTIONS);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const attempt = await promise;
+
+    expect(attempt.accepted).toBe(false);
+    expect(inject).not.toHaveBeenCalled();
+    expect(attempt.injected).toBe(false);
   });
 
   // A refused injection is the interesting diagnosis, so it must be reported rather
@@ -71,14 +165,45 @@ describe('deliverToContentScript', () => {
     vi.spyOn(fakeBrowser.scripting, 'executeScript').mockRejectedValue(
       new Error('Cannot access contents of the page')
     );
+    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue(tabAt(DASHBOARD));
 
     const promise = deliverToContentScript(7, MESSAGE, OPTIONS);
     await vi.advanceTimersByTimeAsync(10_000);
     const attempt = await promise;
 
     expect(attempt.accepted).toBe(false);
-    expect(attempt.injected).toBe(true);
     expect(attempt.lastError).toContain('Cannot access contents of the page');
+  });
+
+  // The behaviour the API fallback depends on: a page this browser will never
+  // script must be reported as such immediately, not after the full budget. Waiting
+  // it out would delay the fallback by 30 seconds for no possible benefit.
+  it('gives up at once when the page can never be scripted', async () => {
+    const send = vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
+    const inject = vi
+      .spyOn(fakeBrowser.scripting, 'executeScript')
+      .mockRejectedValue(new Error('The extensions gallery cannot be scripted.'));
+    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue(tabAt(DASHBOARD));
+
+    const attempt = await deliverToContentScript(7, MESSAGE, OPTIONS);
+
+    expect(attempt.accepted).toBe(false);
+    expect(attempt.unscriptable).toBe(true);
+    // One delivery attempt, one injection attempt, and no retry loop.
+    expect(inject).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not flag a transient failure as unscriptable', async () => {
+    vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
+    vi.spyOn(fakeBrowser.scripting, 'executeScript').mockResolvedValue([] as never);
+    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue(tabAt(DASHBOARD));
+
+    const promise = deliverToContentScript(7, MESSAGE, OPTIONS);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const attempt = await promise;
+
+    expect(attempt.unscriptable).toBe(false);
   });
 
   // Where the tab ended up is what tells a redirect to a sign-in page apart from a
@@ -86,16 +211,13 @@ describe('deliverToContentScript', () => {
   it('reports where the tab ended up', async () => {
     vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
     vi.spyOn(fakeBrowser.scripting, 'executeScript').mockResolvedValue([] as never);
-    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue({
-      id: 7,
-      url: 'https://rewards.bing.com/dashboard',
-    } as never);
+    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue(tabAt(DASHBOARD));
 
     const promise = deliverToContentScript(7, MESSAGE, OPTIONS);
     await vi.advanceTimersByTimeAsync(10_000);
     const attempt = await promise;
 
-    expect(attempt.finalUrl).toBe('https://rewards.bing.com/dashboard');
+    expect(attempt.finalUrl).toBe(DASHBOARD);
   });
 
   it('survives a tab that closed underneath it', async () => {
@@ -122,6 +244,7 @@ describe('deliverToContentScript', () => {
   // That must read as a clear reason, not as a type error from undefined.
   it('reports a missing scripting API instead of crashing', async () => {
     vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
+    vi.spyOn(fakeBrowser.tabs, 'get').mockResolvedValue(tabAt(DASHBOARD));
     const original = (fakeBrowser as { scripting?: unknown }).scripting;
     // Simulate a browser that never had the API.
     delete (fakeBrowser as { scripting?: unknown }).scripting;
@@ -131,7 +254,6 @@ describe('deliverToContentScript', () => {
       const attempt = await promise;
 
       expect(attempt.accepted).toBe(false);
-      expect(attempt.injected).toBe(true);
       expect(attempt.lastError).toContain('no scripting API');
     } finally {
       (fakeBrowser as { scripting?: unknown }).scripting = original;

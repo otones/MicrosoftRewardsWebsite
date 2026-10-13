@@ -95,14 +95,32 @@ export async function runRewards(): Promise<void> {
 // show it, and appends it to the run's error text when something went wrong.
 async function recordDashboardOutcome(outcome: DashboardOutcome): Promise<void> {
     const notes: string[] = [];
-    if (!outcome.accepted) {
+    if (outcome.usedApiFallback) {
+        // The browser refused to script the dashboard, so the set was taken through
+        // the API. Report what that actually achieved: whether the activities are
+        // now credited is what matters, and `pendingAfter` is the only evidence.
+        const api = outcome.api;
+        if (!api) {
+            notes.push('每日活动改用接口方式，但没有拿到结果');
+        } else if (api.error) {
+            notes.push(`每日活动改用接口方式失败：${api.error}`);
+        } else if (api.found === 0) {
+            notes.push('每日活动：接口显示今天没有待完成的活动');
+        } else if (api.pendingAfter === 0) {
+            notes.push(`每日活动：已通过接口完成 ${api.found} 个`);
+        } else if (api.pendingAfter != null) {
+            notes.push(`每日活动：接口方式访问了 ${api.clicked} 个，但还剩 ${api.pendingAfter} 个未完成`);
+        } else {
+            notes.push(`每日活动：接口方式访问了 ${api.clicked} 个，未能确认结果`);
+        }
+    } else if (!outcome.accepted) {
         // The page never took the jobs, even after the content script was injected
         // by hand. Report what was actually observed rather than a guess: the tab's
         // final URL and the last error are what separate a redirect to a sign-in
         // page from a refused injection.
         const detail: string[] = [];
         if (outcome.finalUrl) detail.push(`页面停在 ${outcome.finalUrl.slice(0, 120)}`);
-        if (outcome.injected) detail.push('已尝试主动注入内容脚本');
+        if (outcome.injectionUrl) detail.push(`注入时页面在 ${outcome.injectionUrl.slice(0, 120)}`);
         if (outcome.lastError) detail.push(`最后错误：${outcome.lastError}`);
         notes.push('每日任务页没有接受任务指令' + (detail.length ? `（${detail.join('；')}）` : ''));
     } else if (!outcome.delivered) {

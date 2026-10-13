@@ -3,6 +3,7 @@ import { getRndInteger } from '@/entrypoints/utils/helpers';
 import { ClaimOutcome } from '@/entrypoints/utils/claimFlow';
 import { DailySetOutcome, DashboardDoneMessage } from '@/entrypoints/types/dashboard';
 import { deliverToContentScript } from './deliverToContentScript';
+import { runDailySetViaApi } from './rewardsApi';
 import { trackTab, untrackTab } from './tabCleanup';
 
 // Safety cap: close the dashboard tab even if the content script never reports
@@ -52,6 +53,15 @@ export interface DashboardOutcome {
     // page and a refused injection look identical otherwise.
     finalUrl: string | null;
     lastError: string | null;
+    // The URL the tab was on when injection was last attempted. An injection
+    // refusal is a statement about that URL, so reporting the two together is what
+    // makes the failure diagnosable.
+    injectionUrl: string | null;
+    // True when the browser refused to script the page at all, so the daily set
+    // had to be taken through the API instead.
+    usedApiFallback: boolean;
+    // What the API route achieved. Present only when it ran.
+    api: { found: number; clicked: number; pendingAfter: number | null; error: string | null } | null;
 }
 
 // Resolves with what the content script reported. The safety timer below closes
@@ -87,6 +97,9 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
         injected: false,
         finalUrl: null,
         lastError: null,
+        injectionUrl: null,
+        usedApiFallback: false,
+        api: null,
     };
     let done = false;
     let resolveFinished: () => void = () => {};
@@ -135,10 +148,32 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
             injected: attempt.injected,
             finalUrl: attempt.finalUrl,
             lastError: attempt.lastError,
+            injectionUrl: attempt.injectionUrl,
         };
-        // Nothing took the message even after injecting: stop waiting for a reply
-        // that cannot come.
-        if (!attempt.accepted) finish();
+        // Nothing took the message. Stop waiting for a reply that cannot come, and
+        // when the browser refuses to script the page at all, take the daily set
+        // through the API instead — that refusal is permanent, so there is nothing
+        // to gain by leaving the day unfinished.
+        if (!attempt.accepted) {
+            if (attempt.unscriptable && jobs.doDailySet) {
+                outcome.usedApiFallback = true;
+                void runDailySetViaApi().then((report) => {
+                    outcome = {
+                        ...outcome,
+                        dailySets: { found: report.found, clicked: report.clicked },
+                        api: {
+                            found: report.found,
+                            clicked: report.clicked,
+                            pendingAfter: report.pendingAfter,
+                            error: report.error,
+                        },
+                    };
+                    finish();
+                });
+                return;
+            }
+            finish();
+        }
     });
 
     await finished;
