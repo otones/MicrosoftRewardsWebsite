@@ -87,19 +87,30 @@ describe('toDailyRunStatus', () => {
   it('reports a finished run with the daily time and the time it started', () => {
     const view = toDailyRunStatus(state({ lastRunAt: 42 }), formatTime);
 
-    expect(view).toEqual({
-      tone: 'ok',
-      text: '每天 09:00 自动运行 —— 今天已于 at:42 开始。',
-    });
+    expect(view.tone).toBe('ok');
+    expect(view.text).toBe('每天 09:00 自动运行 —— 今天已于 at:42 开始。');
+    expect(view.note ?? null).toBeNull();
   });
 
   it('drops the daily time from a finished run when none is configured', () => {
     const view = toDailyRunStatus(state({ lastRunAt: 42, runAtTime: null }), formatTime);
 
-    expect(view).toEqual({
-      tone: 'ok',
-      text: '自动运行 —— 今天已于 at:42 开始。',
-    });
+    expect(view.tone).toBe('ok');
+    expect(view.text).toBe('自动运行 —— 今天已于 at:42 开始。');
+    expect(view.note ?? null).toBeNull();
+  });
+
+  // The point of carrying a note: a run that finished but left part of the work
+  // undone must not read as a clean success. This is the shape the background
+  // records when the daily-set page never rendered its cards.
+  it('passes on what the run noticed without failing', () => {
+    const view = toDailyRunStatus(
+      state({ lastRunAt: 42, lastRunNote: '每日活动：页面上没有找到活动卡片' }),
+      formatTime
+    );
+
+    expect(view.tone).toBe('ok');
+    expect(view.note).toBe('每日活动：页面上没有找到活动卡片');
   });
 
   // A day marked by a build that did not record a start time yet.

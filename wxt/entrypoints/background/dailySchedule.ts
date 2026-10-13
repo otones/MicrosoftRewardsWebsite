@@ -13,7 +13,7 @@ import {
 import { toInt } from '@/entrypoints/utils/search';
 import { DEFAULTS } from '@/entrypoints/utils/settings';
 import { setBadgeText } from '@/entrypoints/utils/browserAction';
-import { openDailyRewards } from './dailyRewards';
+import { openDailyRewards, DashboardOutcome } from './dailyRewards';
 import { startSearches, stopSearches } from './searchRunner';
 import { clearTrackedTabs } from './tabCleanup';
 
@@ -68,8 +68,8 @@ export async function runRewards(): Promise<void> {
     const isClaimEnabled = s.claimPoints ?? DEFAULTS.claimPoints;
     const isSearchesEnabled = s.active ?? DEFAULTS.active;
 
-    // The dashboard visit is deliberately NOT awaited: the two runs are
-    // independent. Awaiting it used to serialise the searches behind the
+    // The dashboard visit is deliberately NOT awaited before the searches: the two
+    // runs are independent. Awaiting it used to serialise the searches behind the
     // dashboard tab reporting "complete", so a dashboard closed by the user,
     // removed by our own safety timer, or lost to a torn-down service worker
     // meant not a single search ran that day. One tab covers both dashboard
@@ -79,11 +79,33 @@ export async function runRewards(): Promise<void> {
         void openDailyRewards({
             doDailySet: isDailySetEnabled,
             doClaim: isClaimEnabled,
-        }).catch(() => {});
+        })
+            .then((outcome) => recordDashboardOutcome(outcome))
+            .catch(() => {});
     }
     if (isSearchesEnabled && searches > 0) {
         await startSearches(searchTimeout, searches, closeTime);
     }
+}
+
+// Records what the dashboard visit actually achieved. A daily-set job that found
+// no cards, or whose clicks were refused, used to be indistinguishable from a
+// finished one — the tab closed and the run was written up as "ok" whether or not
+// any activity had been credited. This keeps that outcome where the popup can
+// show it, and appends it to the run's error text when something went wrong.
+async function recordDashboardOutcome(outcome: DashboardOutcome): Promise<void> {
+    const notes: string[] = [];
+    if (outcome.dailySets) {
+        const { found, clicked } = outcome.dailySets;
+        if (found === 0) notes.push('每日活动：页面上没有找到活动卡片');
+        else if (clicked < found) notes.push(`每日活动：只点到了 ${clicked}/${found} 个`);
+    } else if (outcome.claimed === null) {
+        notes.push('每日任务页没有回报结果（可能没加载完就被关闭）');
+    }
+    if (outcome.claimed === 'noCard') notes.push('领取积分：没找到「可领取」入口');
+
+    if (notes.length === 0) return;
+    await setStorageItem('lastRunNote', notes.join('；'), StorageValues.LOCAL);
 }
 
 // Guards the gate against running twice at once. The catch-up below fires on
@@ -142,7 +164,7 @@ async function attemptDailyRun(): Promise<void> {
     if ((await readLastOpened()) === today) return;
 
     await setStorageItems(
-        { lastRunAt: Date.now(), lastRunOutcome: 'started', lastRunError: null },
+        { lastRunAt: Date.now(), lastRunOutcome: 'started', lastRunError: null, lastRunNote: null },
         StorageValues.LOCAL
     );
 

@@ -61,9 +61,19 @@ function App() {
                     has not, that it is still coming — the failure this used to
                     leave was silence. */}
                 {runStatus.isLoaded && (
-                    <p className={`run-status run-status--${runStatus.view.tone}`} role="status">
-                        {runStatus.view.text}
-                    </p>
+                    <>
+                        <p className={`run-status run-status--${runStatus.view.tone}`} role="status">
+                            {runStatus.view.text}
+                        </p>
+                        {/* What the run noticed without failing: the daily-set page
+                            had no cards, clicks did not land. Without it a half-done
+                            run read exactly like a finished one. */}
+                        {runStatus.view.note && (
+                            <p className="run-status run-status--warn" role="status">
+                                {runStatus.view.note}
+                            </p>
+                        )}
+                    </>
                 )}
                 <div className="checkboxes">
                     <div className="input-with-info">

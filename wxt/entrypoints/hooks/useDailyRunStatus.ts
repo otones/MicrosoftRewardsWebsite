@@ -10,6 +10,7 @@ interface RawState {
     lastRunAt: number | null;
     lastRunOutcome: unknown;
     lastRunError: string | null;
+    lastRunNote: string | null;
     // null until read (storage.watch reports a missing key as null), so the
     // defaults below are what the background would also use.
     active: boolean | null;
@@ -23,6 +24,7 @@ const EMPTY: RawState = {
     lastRunAt: null,
     lastRunOutcome: null,
     lastRunError: null,
+    lastRunNote: null,
     active: null,
     autoDaily: null,
     claimPoints: null,
@@ -39,7 +41,7 @@ export function useDailyRunStatus(): { isLoaded: boolean; view: DailyRunStatusVi
     useEffect(() => {
         let isMounted = true;
         void Promise.all([
-            getStorageItems(['lastOpened', 'lastRunAt', 'lastRunOutcome', 'lastRunError'], StorageValues.LOCAL),
+            getStorageItems(['lastOpened', 'lastRunAt', 'lastRunOutcome', 'lastRunError', 'lastRunNote'], StorageValues.LOCAL),
             getStorageItems(['active', 'autoDaily', 'claimPoints', 'runAtTime'], StorageValues.SYNC),
         ]).then(([run, toggles]) => {
             if (!isMounted) return;
@@ -56,6 +58,7 @@ export function useDailyRunStatus(): { isLoaded: boolean; view: DailyRunStatusVi
             storage.watch<number>('local:lastRunAt', (value) => patch({ lastRunAt: value })),
             storage.watch<unknown>('local:lastRunOutcome', (value) => patch({ lastRunOutcome: value })),
             storage.watch<string>('local:lastRunError', (value) => patch({ lastRunError: value })),
+            storage.watch<string>('local:lastRunNote', (value) => patch({ lastRunNote: value })),
             storage.watch<boolean>('sync:active', (value) => patch({ active: value })),
             storage.watch<boolean>('sync:autoDaily', (value) => patch({ autoDaily: value })),
             storage.watch<boolean>('sync:claimPoints', (value) => patch({ claimPoints: value })),
@@ -83,6 +86,7 @@ export function useDailyRunStatus(): { isLoaded: boolean; view: DailyRunStatusVi
             lastRunAt: state.lastRunAt,
             lastRunOutcome: state.lastRunOutcome,
             lastRunError: state.lastRunError,
+            lastRunNote: state.lastRunNote,
             enabledFeatures,
             runAtTime: state.runAtTime ?? DEFAULTS.runAtTime,
         },

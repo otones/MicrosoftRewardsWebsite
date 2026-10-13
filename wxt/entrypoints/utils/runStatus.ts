@@ -18,6 +18,10 @@ export interface DailyRunState {
     // As read from storage, so it may be anything; parsed below.
     lastRunOutcome: unknown;
     lastRunError: string | null;
+    // Anything the run noticed but did not fail on — a daily-set page with no
+    // cards, clicks that did not land. Without this a half-done run still read as
+    // a completed one.
+    lastRunNote?: string | null;
     // The enabled daily features, in popup order. Empty means nothing can run.
     enabledFeatures: string[];
     // The local time of day the run is due at, as configured ("09:00").
@@ -27,6 +31,9 @@ export interface DailyRunState {
 export interface DailyRunStatusView {
     tone: 'ok' | 'warn' | 'idle' | 'running';
     text: string;
+    // What the run noticed without failing, shown under the main line. Null when
+    // there is nothing to add, so the caller can render it unconditionally.
+    note?: string | null;
 }
 
 export function parseRunOutcome(value: unknown): RunOutcome | null {
@@ -83,6 +90,7 @@ export function toDailyRunStatus(
                 text: state.runAtTime
                     ? `每天 ${state.runAtTime} 自动运行 —— 今天已于 ${formatTime(state.lastRunAt)} 开始。`
                     : `自动运行 —— 今天已于 ${formatTime(state.lastRunAt)} 开始。`,
+                note: state.lastRunNote ?? null,
             };
     }
 }

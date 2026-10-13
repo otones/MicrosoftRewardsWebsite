@@ -1,5 +1,7 @@
 import { browser } from 'wxt/browser';
 import { getRndInteger } from '@/entrypoints/utils/helpers';
+import { ClaimOutcome } from '@/entrypoints/utils/claimFlow';
+import { DailySetOutcome, DashboardDoneMessage } from '@/entrypoints/types/dashboard';
 import { trackTab, untrackTab } from './tabCleanup';
 
 // Safety cap: close the dashboard tab even if the content script never reports
@@ -22,15 +24,22 @@ export interface DashboardJobs {
     doClaim: boolean;
 }
 
-// Opens the rewards dashboard and tells the content script which of its jobs to
-// run: clicking the daily-set cards (that click is what credits the points) and
-// pressing "Ready to claim". The dashboard is opened ACTIVE: browsers pause
-// rendering/timers in hidden tabs, so the SPA won't render its daily-set grid or
-// its claim flyout — nor keep the click loop running — unless the tab is
-// visible. We restore the user's previous tab when done. Each daily-set click
-// opens a search in its own tab (auto-closed shortly after it loads); if such a
-// tab grabs focus we snap it back to the dashboard so it stays rendered.
-export async function openDailyRewards(jobs: DashboardJobs): Promise<void> {
+// The `dashboardDone` message the content script sends back.
+type ReportedDone = Partial<DashboardDoneMessage>;
+
+// What the dashboard actually managed to do. The caller records this, so a run
+// that found no cards, or whose clicks were refused, is not reported as a
+// completed one.
+export interface DashboardOutcome {
+    dailySets: DailySetOutcome | null;
+    claimed: ClaimOutcome | null;
+}
+
+// Resolves with what the content script reported. The safety timer below closes
+// the tab but has nothing to report, so it leaves the outcome empty rather than
+// claiming success — which is how a silent failure used to look identical to a
+// finished run.
+export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOutcome> {
     const previousActiveTabId = await getActiveTabId();
 
     const tab = await browser.tabs.create({ url: 'https://rewards.bing.com/dashboard', active: true });
@@ -48,6 +57,7 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<void> {
     }
     browser.tabs.onCreated.addListener(onCreated);
 
+    let outcome: DashboardOutcome = { dailySets: null, claimed: null };
     let done = false;
     function finish(): void {
         if (done) return;
@@ -61,8 +71,13 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<void> {
         }
     }
 
-    function doneListener(message: { action?: string }, sender: { tab?: { id?: number } }): void {
-        if (message.action === 'dashboardDone' && sender.tab?.id === dashboardId) finish();
+    function doneListener(message: ReportedDone, sender: { tab?: { id?: number } }): void {
+        if (message.action !== 'dashboardDone' || sender.tab?.id !== dashboardId) return;
+        outcome = {
+            dailySets: message.dailySets ?? null,
+            claimed: message.claimed ?? null,
+        };
+        finish();
     }
     browser.runtime.onMessage.addListener(doneListener);
     setTimeout(finish, DAILY_TAB_MAX_LIFETIME_MS);
@@ -89,6 +104,11 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<void> {
         browser.tabs.onUpdated.addListener(loadListener);
         const giveUpTimer = setTimeout(settle, DASHBOARD_LOAD_TIMEOUT_MS);
     });
+
+    // Reported only if the content script got far enough to send it; an empty
+    // outcome means the dashboard never reported, which the caller records as an
+    // unfinished run rather than a completed one.
+    return outcome;
 }
 
 async function getActiveTabId(): Promise<number | undefined> {
