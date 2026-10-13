@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { getRndInteger } from '@/entrypoints/utils/helpers';
 import { ClaimOutcome } from '@/entrypoints/utils/claimFlow';
 import { DailySetOutcome, DashboardDoneMessage } from '@/entrypoints/types/dashboard';
+import { deliverToContentScript } from './deliverToContentScript';
 import { trackTab, untrackTab } from './tabCleanup';
 
 // Safety cap: close the dashboard tab even if the content script never reports
@@ -14,33 +15,12 @@ const DAILY_LINK_MAX_LINGER_MS = 5000;
 // Fallback: close a daily-set tab this long after it opened even if it never
 // reports "complete".
 const DAILY_LINK_HARD_CLOSE_MS = 20000;
-// How long to keep offering the jobs to the dashboard's content script. Delivery
-// is retried rather than tied to a load event: the script registers whenever the
-// page finishes parsing it, which is not an instant this side can observe.
+// How long to keep offering the jobs to the dashboard. Delivery is retried rather
+// than tied to a load event: the script registers whenever the page finishes
+// parsing it, which is not an instant this side can observe. The first stretch of
+// the budget is what the hand-injection fallback falls back from.
 const DASHBOARD_SEND_TIMEOUT_MS = 30000;
 const DASHBOARD_SEND_RETRY_MS = 400;
-
-// Offers the jobs to the dashboard until its content script accepts them.
-//
-// This deliberately does NOT wait for the tab's "complete" event. That event is
-// reported once and never replayed, so a listener attached a moment late misses it
-// for good and the dashboard is never told to do anything — which is precisely how
-// the daily activities went uncredited. `tabs.sendMessage` rejects while nothing is
-// listening yet, which is the only reliable signal available, so the jobs are
-// simply re-offered until they are taken (or the budget runs out).
-async function sendRunDashboard(tabId: number, jobs: DashboardJobs): Promise<boolean> {
-    const deadline = Date.now() + DASHBOARD_SEND_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-        try {
-            await browser.tabs.sendMessage(tabId, { action: 'runDashboard', ...jobs });
-            return true;
-        } catch {
-            // Nothing listening yet, or the tab is gone. Try again shortly.
-            await new Promise((resolve) => setTimeout(resolve, DASHBOARD_SEND_RETRY_MS));
-        }
-    }
-    return false;
-}
 
 export interface DashboardJobs {
     doDailySet: boolean;
@@ -64,6 +44,14 @@ export interface DashboardOutcome {
     // report a result. Distinguishes "never got the message" from "got it and said
     // nothing", which need different fixes.
     accepted: boolean;
+    // True when the content script had to be injected by hand because nothing was
+    // listening: the static declaration was not running in that tab.
+    injected: boolean;
+    // Where the tab ended up, and the last error seen. Without these a failure says
+    // only "no answer" and leaves the cause to guesswork — a redirect to a sign-in
+    // page and a refused injection look identical otherwise.
+    finalUrl: string | null;
+    lastError: string | null;
 }
 
 // Resolves with what the content script reported. The safety timer below closes
@@ -91,7 +79,15 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
     // when the service worker is torn down before it ever fires.
     await trackTab(dashboardId, DAILY_TAB_MAX_LIFETIME_MS);
 
-    let outcome: DashboardOutcome = { dailySets: null, claimed: null, delivered: false, accepted: false };
+    let outcome: DashboardOutcome = {
+        dailySets: null,
+        claimed: null,
+        delivered: false,
+        accepted: false,
+        injected: false,
+        finalUrl: null,
+        lastError: null,
+    };
     let done = false;
     let resolveFinished: () => void = () => {};
     const finished = new Promise<void>((resolve) => {
@@ -114,6 +110,7 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
     function doneListener(message: ReportedDone, sender: { tab?: { id?: number } }): void {
         if (message.action !== 'dashboardDone' || sender.tab?.id !== dashboardId) return;
         outcome = {
+            ...outcome,
             dailySets: message.dailySets ?? null,
             claimed: message.claimed ?? null,
             delivered: true,
@@ -124,12 +121,24 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
     browser.runtime.onMessage.addListener(doneListener);
     setTimeout(finish, DAILY_TAB_MAX_LIFETIME_MS);
 
-    // Offer the jobs immediately. No load event gates this: `sendRunDashboard`
-    // keeps re-offering until the content script is listening, which is the only
-    // thing that actually has to be true before the dashboard can act.
-    void sendRunDashboard(dashboardId, jobs).then((accepted) => {
-        if (accepted) outcome.accepted = true;
-        else finish();
+    // Offer the jobs immediately, falling back to injecting the content script
+    // when nothing is listening. No load event gates this: the delivery helper
+    // keeps trying until a listener takes the message, which is the only thing
+    // that actually has to be true before the dashboard can act.
+    void deliverToContentScript(dashboardId, { action: 'runDashboard', ...jobs }, {
+        timeoutMs: DASHBOARD_SEND_TIMEOUT_MS,
+        retryMs: DASHBOARD_SEND_RETRY_MS,
+    }).then((attempt) => {
+        outcome = {
+            ...outcome,
+            accepted: attempt.accepted,
+            injected: attempt.injected,
+            finalUrl: attempt.finalUrl,
+            lastError: attempt.lastError,
+        };
+        // Nothing took the message even after injecting: stop waiting for a reply
+        // that cannot come.
+        if (!attempt.accepted) finish();
     });
 
     await finished;

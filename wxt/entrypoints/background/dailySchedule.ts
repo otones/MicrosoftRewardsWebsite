@@ -96,10 +96,15 @@ export async function runRewards(): Promise<void> {
 async function recordDashboardOutcome(outcome: DashboardOutcome): Promise<void> {
     const notes: string[] = [];
     if (!outcome.accepted) {
-        // The page never took the jobs, so neither dashboard job ran. Distinct
-        // from "ran and found nothing", and the only case where the daily set is
-        // certainly untouched.
-        notes.push('每日任务页没有接受任务指令（内容脚本未就绪），今天没有点每日活动');
+        // The page never took the jobs, even after the content script was injected
+        // by hand. Report what was actually observed rather than a guess: the tab's
+        // final URL and the last error are what separate a redirect to a sign-in
+        // page from a refused injection.
+        const detail: string[] = [];
+        if (outcome.finalUrl) detail.push(`页面停在 ${outcome.finalUrl.slice(0, 120)}`);
+        if (outcome.injected) detail.push('已尝试主动注入内容脚本');
+        if (outcome.lastError) detail.push(`最后错误：${outcome.lastError}`);
+        notes.push('每日任务页没有接受任务指令' + (detail.length ? `（${detail.join('；')}）` : ''));
     } else if (!outcome.delivered) {
         notes.push('每日任务页收到了指令但没有回报结果（可能加载未完成就被关闭）');
     } else if (outcome.dailySets) {
