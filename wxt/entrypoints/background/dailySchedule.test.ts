@@ -143,29 +143,55 @@ describe('runRewards', () => {
 
     await runRewards();
     await flushPendingWork();
-    const dashboardId = urls.indexOf(DASHBOARD_URL) + 1;
-    await fakeBrowser.tabs.onUpdated.trigger(dashboardId, { status: 'complete' }, { id: dashboardId } as never);
     await vi.advanceTimersByTimeAsync(10_000);
 
     expect(sendMessage.mock.calls.length).toBeGreaterThanOrEqual(3);
     // Every attempt must be the dashboard job, never a stray message.
     expect(sendMessage.mock.calls.every(([, msg]: any[]) => msg?.action === 'runDashboard')).toBe(true);
+    expect(urls).toContain(DASHBOARD_URL);
+  });
+
+  // Regression: delivery used to be gated on the tab's "complete" event, which is
+  // reported once and never replayed. A listener attached even slightly late missed
+  // it for good, so the dashboard was never told to do anything and the daily
+  // activities went uncredited while the run was recorded as fine. No load event at
+  // all must still deliver.
+  it('delivers the jobs with no tab "complete" event at all', async () => {
+    trackCreatedTabs();
+    const sendMessage = vi.spyOn(fakeBrowser.tabs, 'sendMessage');
+    await seed({ active: false, autoDaily: true });
+
+    await runRewards();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(sendMessage).toHaveBeenCalled();
+    expect(sendMessage.mock.calls[0][1]).toMatchObject({ action: 'runDashboard', doDailySet: true });
   });
 
   // Nothing is listening at all: the run must record that, not present itself as a
   // completed one. This is the shape the popup shows as a warning line.
   it('records that the dashboard never accepted the jobs', async () => {
-    const urls = trackCreatedTabs();
+    trackCreatedTabs();
     vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockRejectedValue(new Error('no listener'));
     await seed({ active: false, autoDaily: true });
 
     await runRewards();
-    await flushPendingWork();
-    const dashboardId = urls.indexOf(DASHBOARD_URL) + 1;
-    await fakeBrowser.tabs.onUpdated.trigger(dashboardId, { status: 'complete' }, { id: dashboardId } as never);
     await vi.advanceTimersByTimeAsync(120_000);
 
     expect(await getStorageItem<string>('lastRunNote', StorageValues.LOCAL)).toContain('没有接受任务指令');
+  });
+
+  // The dashboard took the message but never answered: a different failure from
+  // never being reached, and it has its own note.
+  it('records a delivery that was accepted but never answered', async () => {
+    trackCreatedTabs();
+    vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockResolvedValue(undefined);
+    await seed({ active: false, autoDaily: true });
+
+    await runRewards();
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(await getStorageItem<string>('lastRunNote', StorageValues.LOCAL)).toContain('收到了指令但没有回报结果');
   });
 
   // One tab covers both jobs: two would fight over the foreground, and the SPA

@@ -14,33 +14,28 @@ const DAILY_LINK_MAX_LINGER_MS = 5000;
 // Fallback: close a daily-set tab this long after it opened even if it never
 // reports "complete".
 const DAILY_LINK_HARD_CLOSE_MS = 20000;
-// Give up waiting on the dashboard to load rather than leaving the promise
-// pending forever when the tab is closed (by the user or by `finish`) or the
-// load event never arrives.
-const DASHBOARD_LOAD_TIMEOUT_MS = 30000;
-// "complete" fires when the document has loaded, which on this SPA is still before
-// its content script is guaranteed to have registered its listener. The first
-// send therefore used to be dropped silently and never retried — the dashboard
-// ran neither job and the run was written up as fine. Retry until the content
-// script answers or the attempts run out.
-const DASHBOARD_SEND_DELAY_MS = 300;
-const DASHBOARD_SEND_ATTEMPTS = 12;
-const DASHBOARD_SEND_RETRY_MS = 500;
+// How long to keep offering the jobs to the dashboard's content script. Delivery
+// is retried rather than tied to a load event: the script registers whenever the
+// page finishes parsing it, which is not an instant this side can observe.
+const DASHBOARD_SEND_TIMEOUT_MS = 30000;
+const DASHBOARD_SEND_RETRY_MS = 400;
 
-// Sends the jobs to the dashboard until the content script acknowledges them.
+// Offers the jobs to the dashboard until its content script accepts them.
 //
-// `tabs.sendMessage` rejects when nothing is listening yet, and the one-shot send
-// this replaced swallowed that rejection — so on a page whose script registered a
-// little late, the dashboard silently did nothing and the run was written up as
-// fine. Retrying is what makes a late listener harmless; the bound stops a page
-// that never loads a script from spinning.
+// This deliberately does NOT wait for the tab's "complete" event. That event is
+// reported once and never replayed, so a listener attached a moment late misses it
+// for good and the dashboard is never told to do anything — which is precisely how
+// the daily activities went uncredited. `tabs.sendMessage` rejects while nothing is
+// listening yet, which is the only reliable signal available, so the jobs are
+// simply re-offered until they are taken (or the budget runs out).
 async function sendRunDashboard(tabId: number, jobs: DashboardJobs): Promise<boolean> {
-    for (let attempt = 0; attempt < DASHBOARD_SEND_ATTEMPTS; attempt++) {
+    const deadline = Date.now() + DASHBOARD_SEND_TIMEOUT_MS;
+    while (Date.now() < deadline) {
         try {
             await browser.tabs.sendMessage(tabId, { action: 'runDashboard', ...jobs });
             return true;
         } catch {
-            // No listener yet, or the tab went away. Wait, then try once more.
+            // Nothing listening yet, or the tab is gone. Try again shortly.
             await new Promise((resolve) => setTimeout(resolve, DASHBOARD_SEND_RETRY_MS));
         }
     }
@@ -65,6 +60,10 @@ export interface DashboardOutcome {
     // failure from a page that ran them and found nothing to do, and only this
     // side can tell the two apart.
     delivered: boolean;
+    // True once the content script accepted the jobs, whether or not it went on to
+    // report a result. Distinguishes "never got the message" from "got it and said
+    // nothing", which need different fixes.
+    accepted: boolean;
 }
 
 // Resolves with what the content script reported. The safety timer below closes
@@ -76,10 +75,9 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
 
     const tab = await browser.tabs.create({ url: 'https://rewards.bing.com/dashboard', active: true });
     const dashboardId = tab.id!;
-    // The `finish` timer below is the precise close; this is the backstop for
-    // when the service worker is torn down before it ever fires.
-    await trackTab(dashboardId, DAILY_TAB_MAX_LIFETIME_MS);
 
+    // `tabs.onCreated` goes on straight away, before any further await, so the
+    // daily-set search tabs this dashboard opens are caught as they appear.
     function onCreated(created: { id?: number; openerTabId?: number }): void {
         if (created.openerTabId !== dashboardId || created.id == null) return;
         // Keep the dashboard foregrounded so it stays rendered and keeps
@@ -89,8 +87,17 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
     }
     browser.tabs.onCreated.addListener(onCreated);
 
-    let outcome: DashboardOutcome = { dailySets: null, claimed: null, delivered: false };
+    // The `finish` timer below is the precise close; this is the backstop for
+    // when the service worker is torn down before it ever fires.
+    await trackTab(dashboardId, DAILY_TAB_MAX_LIFETIME_MS);
+
+    let outcome: DashboardOutcome = { dailySets: null, claimed: null, delivered: false, accepted: false };
     let done = false;
+    let resolveFinished: () => void = () => {};
+    const finished = new Promise<void>((resolve) => {
+        resolveFinished = resolve;
+    });
+
     function finish(): void {
         if (done) return;
         done = true;
@@ -101,6 +108,7 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
         if (previousActiveTabId != null) {
             browser.tabs.update(previousActiveTabId, { active: true }).catch(() => {});
         }
+        resolveFinished();
     }
 
     function doneListener(message: ReportedDone, sender: { tab?: { id?: number } }): void {
@@ -109,38 +117,26 @@ export async function openDailyRewards(jobs: DashboardJobs): Promise<DashboardOu
             dailySets: message.dailySets ?? null,
             claimed: message.claimed ?? null,
             delivered: true,
+            accepted: true,
         };
         finish();
     }
     browser.runtime.onMessage.addListener(doneListener);
     setTimeout(finish, DAILY_TAB_MAX_LIFETIME_MS);
 
-    await new Promise<void>((resolve) => {
-        let isSettled = false;
-        function settle(): void {
-            if (isSettled) return;
-            isSettled = true;
-            browser.tabs.onUpdated.removeListener(loadListener);
-            clearTimeout(giveUpTimer);
-            resolve();
-        }
-        function loadListener(updatedId: number, changeInfo: { status?: string }): void {
-            if (updatedId !== dashboardId || changeInfo.status !== 'complete') return;
-            browser.tabs.onUpdated.removeListener(loadListener);
-            setTimeout(() => {
-                void sendRunDashboard(dashboardId, jobs).then((delivered) => {
-                    if (delivered) outcome.delivered = true;
-                });
-                settle();
-            }, DASHBOARD_SEND_DELAY_MS);
-        }
-        browser.tabs.onUpdated.addListener(loadListener);
-        const giveUpTimer = setTimeout(settle, DASHBOARD_LOAD_TIMEOUT_MS);
+    // Offer the jobs immediately. No load event gates this: `sendRunDashboard`
+    // keeps re-offering until the content script is listening, which is the only
+    // thing that actually has to be true before the dashboard can act.
+    void sendRunDashboard(dashboardId, jobs).then((accepted) => {
+        if (accepted) outcome.accepted = true;
+        else finish();
     });
 
-    // Reported only if the content script got far enough to send it; an empty
-    // outcome means the dashboard never reported, which the caller records as an
-    // unfinished run rather than a completed one.
+    await finished;
+
+    // Filled in by the content script's reply; an empty outcome means the
+    // dashboard never reported, which the caller records as an unfinished run
+    // rather than a completed one.
     return outcome;
 }
 
