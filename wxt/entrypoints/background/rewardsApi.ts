@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { getRndInteger, wait } from '@/entrypoints/utils/helpers';
+import { fetchWithSession } from './rewardsSession';
 import { trackTab, untrackTab } from './tabCleanup';
 
 // The endpoint the dashboard itself calls to list the day's activities.
@@ -30,18 +31,33 @@ export interface DailyOffer {
 
 // Reads the daily set out of the API payload.
 //
-// The set has been seen keyed by date (an object of arrays) and, on some accounts,
-// flattened into a single array; both are accepted so a server-side change shows up
-// as items found rather than as a silent "no activities today". Entries without a
-// destination are dropped: there would be nothing to visit.
-export function parseDailyOffers(payload: unknown): DailyOffer[] {
+// The payload keys the set by date and carries **several days at once** — measured
+// on a live account, it held today's three items (all complete) *and* tomorrow's
+// three (all pending). Taking every entry would therefore open tomorrow's
+// activities today, which credits nothing and looks like the extension acting on
+// its own. Only the entry for the day the run is happening on is used.
+//
+// A flat array has also been seen on some accounts; when the set arrives that way
+// there is no date to filter on, so it is taken as-is.
+export function parseDailyOffers(payload: unknown, today: Date = new Date()): DailyOffer[] {
     const block = (payload as { dailySetPromotions?: unknown } | null)?.dailySetPromotions;
     const raw: unknown[] = [];
     if (Array.isArray(block)) {
         raw.push(...block);
     } else if (block && typeof block === 'object') {
-        for (const value of Object.values(block as Record<string, unknown>)) {
-            if (Array.isArray(value)) raw.push(...value);
+        const entries = block as Record<string, unknown>;
+        const todayKey = todayKeyFor(today);
+        const chosen = entries[todayKey];
+        if (Array.isArray(chosen)) {
+            raw.push(...chosen);
+        } else if (Object.keys(entries).length === 1) {
+            // Exactly one key. Take it only when the key is *not* a date this code
+            // can read: that means the format changed and filtering is impossible,
+            // so dropping the day would be the worse error. A readable date that is
+            // not today is rejected — otherwise the payload's next-day set (which is
+            // present after the reset) would be completed a day early.
+            const [onlyKey, onlyValue] = Object.entries(entries)[0];
+            if (!isDateKey(onlyKey) && Array.isArray(onlyValue)) raw.push(...onlyValue);
         }
     }
 
@@ -61,6 +77,18 @@ export function parseDailyOffers(payload: unknown): DailyOffer[] {
     return offers;
 }
 
+// The keys are US-style `M/D/YYYY` (e.g. `10/15/2026`), built from local time
+// because that is the day the user is living in.
+export function todayKeyFor(date: Date): string {
+    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+}
+
+// Recognises the endpoint's date keys, so an unreadable key can be told apart from
+// one that is simply another day.
+function isDateKey(key: string): boolean {
+    return /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(key);
+}
+
 export interface ApiOffersResult {
     offers: DailyOffer[];
     error: string | null;
@@ -69,22 +97,27 @@ export interface ApiOffersResult {
     keys: string[];
 }
 
-// `credentials: 'include'` is what makes this the user's own session; it is allowed
-// because the manifest declares host permissions for rewards.bing.com.
+// `credentials: 'include'` is not enough on its own: the session cookies are
+// SameSite=Lax, so a cross-site request from the service worker leaves them behind
+// and the endpoint answers 401. `fetchWithSession` attaches them explicitly via a
+// temporary declarativeNetRequest rule (a `Cookie` header cannot be set from
+// `fetch` itself — it is a forbidden header name).
 export async function fetchDailyOffers(): Promise<ApiOffersResult> {
-    try {
+    const { result, cookieCount, error } = await fetchWithSession(USER_INFO_URL, async () => {
         const response = await fetch(USER_INFO_URL, {
             credentials: 'include',
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         });
-        if (!response.ok) return { offers: [], error: `HTTP ${response.status}`, keys: [] };
-        const payload: unknown = await response.json();
-        const keys =
-            payload && typeof payload === 'object' ? Object.keys(payload as object).slice(0, 12) : [];
-        return { offers: parseDailyOffers(payload), error: null, keys };
-    } catch (error) {
-        return { offers: [], error: describe(error), keys: [] };
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return (await response.json()) as unknown;
+    });
+
+    if (error || result == null) {
+        return { offers: [], error: `${error ?? 'no response'} (cookies: ${cookieCount})`, keys: [] };
     }
+    const keys =
+        result && typeof result === 'object' ? Object.keys(result as object).slice(0, 12) : [];
+    return { offers: parseDailyOffers(result), error: null, keys };
 }
 
 export interface ApiRunReport {

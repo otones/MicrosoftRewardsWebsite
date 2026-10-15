@@ -15,7 +15,12 @@ export default defineConfig({
     // out-ranking it: a fork cannot update the original listing anyway, and this
     // way the base stays obvious.
     version_name: '3.1.2-zh',
-    permissions: ['storage', 'alarms', 'scripting'],
+    // `cookies` reads the Rewards session inside the browser (Edge encrypts them
+    // with App-Bound encryption, so nothing outside the browser can). `declarativeNetRequest`
+    // is what attaches them to the API request: a `Cookie` header is a forbidden
+    // header name for `fetch`, and the cookies themselves are SameSite=Lax, so a
+    // cross-site request would otherwise arrive unauthenticated and get a 401.
+    permissions: ['storage', 'alarms', 'scripting', 'cookies', 'declarativeNetRequest'],
     // The content scripts are declared below, but declarative injection alone
     // proved unreliable: a tab that was already open when the extension loaded or
     // reloaded never receives the script, and a browser may decline to run one at
